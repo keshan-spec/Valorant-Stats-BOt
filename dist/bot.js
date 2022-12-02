@@ -10,7 +10,7 @@ class DiscordBot {
     constructor() {
         this.PREFIX = "val";
         this.invite = "https://discord.com/api/oauth2/authorize?client_id=1000901867821346946&permissions=0&scope=bot";
-        this.occupiedInstances = new Map();
+        this.cronMap = [];
         this.client = new discord_js_1.Client({ partials: ["MESSAGE", "REACTION"] });
         this.initializeCient();
     }
@@ -47,6 +47,23 @@ class DiscordBot {
         embed.addField("stats <username#tag>", "Shows the last match stats of that player");
         embed.addField("help", "This command will show this message");
         embed.addField("invite", "Provides an invite url for the bot");
+        embed.addField("cron", "Set schedule to show stats after every game");
+        await message.channel.send(embed);
+    }
+    async statsEmbed(message, stats, player) {
+        let gameWon = stats["teams"][player["team"].toLowerCase()]["has_won"] ? "Won" : "Lost";
+        let embed = new discord_js_1.MessageEmbed();
+        embed.setColor(13378082);
+        embed.addField("Map", stats["metadata"]["map"]);
+        embed.addField("Mode", stats["metadata"]["mode"]);
+        embed.addField("Stats", `${player["stats"]["kills"]} kills\n💀 ${player["stats"]["deaths"]} deaths\n${player["stats"]["assists"]} assists`, true);
+        embed.addField("Aim", `🎯 ${player["stats"]["headshots"]} Headshots\n${player["stats"]["bodyshots"]} Bodyshots\n 🦵🏼${player["stats"]["legshots"]} Legshots`, true);
+        embed.addField("Behavior", `${player['behavior']['friendly_fire']['incoming']} Incoming friendly fire\n${player['behavior']['friendly_fire']['outgoing']} Outgoing friendly fire`, true);
+        embed.addField("AFK Time", `${player["behavior"]["afk_rounds"]} Rounds`, true);
+        embed.setDescription(`Game ${gameWon}`);
+        embed.setFooter(`${player["name"]}#${player["tag"]}`);
+        embed.setImage(player['assets']['card']['wide']);
+        embed.setAuthor(`Agent: ${player['character']}`, player['assets']['agent']['small']);
         await message.channel.send(embed);
     }
     async makeRequestToAPI(name, tag, region) {
@@ -57,9 +74,9 @@ class DiscordBot {
             node_fetch_1.default(url, {
                 method: "GET",
                 headers: headers
-            }).then(res => res.json())
-                .then(json => resolve(json))
-                .catch(err => reject(err));
+            }).then((res) => res.json())
+                .then((json) => resolve(json))
+                .catch((err) => reject(err));
         });
     }
     async getCurrentPlayerStats(response, name, tag) {
@@ -84,39 +101,77 @@ class DiscordBot {
                 .setTitle("Use this link to invite this bot to your server!")
                 .setDescription(this.invite));
         }
-        // // the following commands are run after the instance is created
-        // // therefore this statement will act as a clause
-        // let instance = this.occupiedInstances.get(message.author.id)
-        // if (instance == null) return
+        // if (command === "cron") { // stats command
+        //     if (args.length >= 1) {
+        //         // join args into a string
+        //         let temp = args.join(" ")
+        //         //split temp into name and tag
+        //         let region = temp.slice(-2);
+        //         if (region === "ap" || region === "na" || region === "eu" || region === "kr" || region === "sa" || region === "jp") {
+        //             temp = temp.slice(0, -3)
+        //             let [name, tag] = temp.split("#")
+        //             // check if name and tag already exist in the cron map
+        //             if (this.cronMap.find((obj: any) => obj.name === name && obj.tag === tag)) {
+        //                 console.log("Cron job already exists");
+        //                 console.log(this.cronMap);
+        //                 let stats = await this.makeRequestToAPI(name, tag, region)
+        //                 // check if the match id is the same
+        //                 if (stats["data"][0]["metadata"]["matchid"] === this.cronMap.find((obj: any) => obj.name === name && obj.tag === tag).lastMatchID) {
+        //                     await message.channel.send(`${name}#${tag} has not played a game yet`)
+        //                     return
+        //                 } else {
+        //                     let player = await this.getCurrentPlayerStats(stats, name, tag)
+        //                     this.statsEmbed(message, stats["data"][0], player)
+        //                     this.cronMap.find((obj: any) => obj.name === name && obj.tag === tag).lastMatchID = stats["data"][0]["metadata"]["matchid"]
+        //                 }
+        //                 return
+        //             }
+        //             // make request to api
+        //             let stats = await this.makeRequestToAPI(name, tag, region)
+        //             if (stats["status"] === 404) {
+        //                 await message.reply("Player not found or has made their profile private or is not in the region")
+        //                 return
+        //             }
+        //             let player = await this.getCurrentPlayerStats(stats["data"][0]["players"], name, tag)
+        //             console.log("Cron job added");
+        //             this.cronMap.push({ name: name, tag: tag, region: region, lastMatchID: stats["data"][0]["metadata"]["matchid"] })
+        //             // this.statsEmbed(message, stats["data"][0], player)
+        //             this.scheduleJob(message, this.cronMap)
+        //             return;
+        //         } else {
+        //             await message.reply("Invalid region\nValid regions are ap, na, eu, kr, sa, jp")
+        //             return
+        //         }
+        //     } else {
+        //         await message.reply("Username & region required\nExample: valstats name#tag ap")
+        //     }
+        // }
         if (command === "stats") { // show stats
             if (args.length >= 1) {
                 // join args into a string
                 let temp = args.join(" ");
                 //split temp into name and tag
-                let [name, tag] = temp.split("#");
-                // make request to api
-                let stats = await this.makeRequestToAPI(name, tag, "ap");
-                if (stats["status"] === 404) {
-                    await message.reply("Player not found or has made their profile private");
+                let region = temp.slice(-2);
+                if (region === "ap" || region === "na" || region === "eu" || region === "kr" || region === "sa" || region === "jp") {
+                    temp = temp.slice(0, -3);
+                    let [name, tag] = temp.split("#");
+                    // make request to api
+                    let stats = await this.makeRequestToAPI(name, tag, region);
+                    if (stats["status"] === 404) {
+                        await message.reply("Player not found or has made their profile private or is not in the region");
+                        return;
+                    }
+                    let player = await this.getCurrentPlayerStats(stats["data"][0]["players"], name, tag);
+                    this.statsEmbed(message, stats["data"][0], player);
                     return;
                 }
-                let player = await this.getCurrentPlayerStats(stats["data"][0]["players"], name, tag);
-                // process stats
-                let embed = new discord_js_1.MessageEmbed()
-                    .setColor("#30afe3")
-                    .setTitle(`${name}#${tag}`);
-                if (stats["status"] === 200) {
-                    embed.setDescription(`${player["stats"]["kills"]} kills\n${player["stats"]["deaths"]} deaths\n${player["stats"]["assists"]} assists`);
-                }
                 else {
-                    embed.setDescription("Player not found");
+                    await message.reply("Invalid region\nValid regions are ap, na, eu, kr, sa, jp");
+                    return;
                 }
-                await message.channel.send(embed);
-                // send the message
-                // await message.reply("Username: " + stats["metadata"]["map"])
             }
             else {
-                await message.reply("Username required");
+                await message.reply("Username & region required\nExample: valstats name#tag ap");
             }
         }
         return;

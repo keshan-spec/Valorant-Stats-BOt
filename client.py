@@ -22,7 +22,7 @@ def make_request(name, tag, region="ap"):
         return response
 
 
-name, tag = "D4C milk", "shina"
+name, tag = "CMOS milk", "shina"
 resp = make_request(name, tag)
 
 
